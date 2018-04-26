@@ -1,0 +1,73 @@
+<p></p><article> <br>
+            <h1 class="csdn_top" id="从-mongodb-及-mysql-谈bb树">从 MongoDB 及 Mysql 谈B/B+树</h1> <br>
+            <div class="article_bar clearfix"> <br>
+                <div class="artical_tag"> <br>
+                    <span class="original">看到一篇很好的文章，描述了B、B+树之间的区别，让我学习到了很多。转载来自:</span> <br>
+                    <span class="time"><a href="http://blog.csdn.net/wwh578867817/article/details/50493940">http://blog.csdn.net/wwh578867817/article/details/50493940</a></span> <br>
+                </div></div></article><p></p>
+
+<p></p><div class="markdown_views"><p>前两天有位朋友邀请我回答个问题，<strong>为什么 MongoDB （索引）使用B-树而 Mysql 使用 B+树？</strong>我觉得这个问题非常好，从实际应用的角度来学习数据结构，没有比这更好的方法了。因为像 Mysql 和 MongoDB 这种经久考验的大型软件在设计上都是精益求精的，它们为什么选择这些数据结构？:)</p></div><p></p>
+
+<p><strong>本文从实际应用的角度来介绍以及分析B-树和B+树。</strong></p>
+
+<hr>
+
+<h2 id="b-树由来">B-树由来</h2>
+
+<blockquote>
+  <p>定义：B-树是一类树，包括B-树、B+树、B*树等，是一棵自平衡的搜索树，它类似普通的平衡二叉树，不同的一点是B-树允许每个节点有<strong>更多的子节点</strong>。B-树是专门为外部存储器设计的，如磁盘，它对于读取和写入大块数据有良好的性能，所以一般被用在文件系统及数据库中。</p>
+</blockquote>
+
+<p>定义只需要知道B-树允许每个节点有更多的子节点即可。子节点数量一般在上千，具体数量依赖外部存储器的特性。</p>
+
+<p>先来看看为什么会出现B-树这类数据结构。</p>
+
+<p>传统用来搜索的平衡二叉树有很多，如 AVL 树，红黑树等。这些树在一般情况下查询性能非常好，但当数据非常大的时候它们就无能为力了。原因当数据量非常大时，内存不够用，大部分数据只能存放在磁盘上，只有需要的数据才加载到内存中。一般而言内存访问的时间约为 50 ns，而磁盘在 10 ms 左右。速度相差了近 5 个数量级，磁盘读取时间远远超过了数据在内存中比较的时间。这说明程序大部分时间会阻塞在磁盘 IO 上。那么我们如何提高程序性能？<strong>减少磁盘 IO 次数</strong>，像 AVL 树，红黑树这类平衡二叉树从设计上无法“迎合”磁盘。 <br>
+关于磁盘可参考 <a href="http://blog.csdn.net/wwh578867817/article/details/49005675" target="_blank">浅谈计算机中的存储模型（四）磁盘</a></p>
+
+<p><img src="http://img.blog.csdn.net/20160113131019547" alt="平衡二叉树" title=""></p>
+
+<p>上图是一颗简单的平衡二叉树，平衡二叉树是通过<strong>旋转</strong>来保持平衡的，<strong>而旋转是对整棵树的操作</strong>，若部分加载到内存中则无法完成旋转操作。其次平衡二叉树的高度相对较大为 log n（底数为2），这样逻辑上很近的节点实际可能非常远，无法很好的利用磁盘预读（局部性原理），所以这类平衡二叉树在数据库和文件系统上的选择就被 pass 了。</p>
+
+<blockquote>
+  <p>空间局部性原理：如果一个存储器的某个位置被访问，那么将它附近的位置也会被访问。</p>
+</blockquote>
+
+<p>我们从“迎合”磁盘的角度来看看B-树的设计。</p>
+
+<p>索引的效率依赖与磁盘 IO 的次数，快速索引需要有效的减少磁盘 IO 次数，如何快速索引呢？索引的原理其实是<strong>不断的缩小查找范围</strong>，就如我们平时用字典查单词一样，先找首字母缩小范围，再第二个字母等等。平衡二叉树是每次将范围分割为两个区间。为了更快，<strong>B-树每次将范围分割为多个区间，区间越多，定位数据越快越精确</strong>。那么如果节点为区间范围，每个节点就较大了。所以新建节点时，直接申请页大小的空间（磁盘是按 block 分的，一般为 512 Byte。磁盘 IO 一次读取若干个 block，我们称为一页，具体大小和操作系统有关，一般为 4 k，8 k或 16 k），计算机内存分配是按页对齐的，这样就实现了一个节点只需要一次 IO。</p>
+
+<p><img src="http://img.blog.csdn.net/20160113133100893" alt="B-树" title=""></p>
+
+<p>上图是一棵简化的B-树，多叉的好处非常明显，有效的降低了B-树的高度，为底数很大的 log n，底数大小与节点的子节点数目有关，一般一棵B-树的高度在 3 层左右。层数低，每个节点区确定的范围更精确，范围缩小的速度越快。上面说了一个节点需要进行一次 IO，那么总 IO 的次数就缩减为了 log n 次。B-树的每个节点是 n 个有序的序列(a1,a2,a3…an)，并将该节点的子节点分割成 n+1 个区间来进行索引(X1&lt; a1, a2 &lt; X2 &lt; a3, … , an+1 &lt; Xn &lt; anXn+1 &gt; an)。</p>
+
+<hr>
+
+<h2 id="b-树">B-树</h2>
+
+<p><img src="http://img.blog.csdn.net/20160113135955872" alt="B-树" title=""></p>
+
+<p>上图是一颗B-树，<strong>B-树的每个节点有 d~2d 个 key</strong>，<strong>2</strong> 这个因子指明了树的分裂及合并的规则，这个规则维持了B-树的平衡。</p>
+
+<p>B-树的插入和删除就不具体介绍了，很多资料都描述了这一过程。在普通平衡二叉树中，插入删除后若不满足平衡条件则进行 <strong>旋转</strong> 操作，而在B-树中，插入删除后不满足条件则进行分裂及合并操作。</p>
+
+<p>简单叙述下分裂及合并操作。</p>
+
+<blockquote>
+  <p>分裂：如果有一个节点有 2d 个 key，增加一个后为 2d+1 个 key，不符合上述规则 <strong>B-树的每个节点有 d~2d 个 key，大于 2d</strong>，则将该节点进行分裂，分裂为两个 d 个 key 的节点并将中值 key 归还给父节点。 <br>
+  合并：如果有一个节点有 d 个 key，删除一个后为 d-1 个 key，不符合上述规则 <strong>B-树的每个节点有 d~2d 个 key，小于 d</strong>，则将该节点进行合并，合并后若满足条件则合并完成，不满足则均分为两个节点。</p>
+</blockquote>
+
+<p><strong>B-树的查找</strong></p>
+
+<p>我们来看看B-树的<strong>查找</strong>，假设每个节点有 n 个 key值，被分割为 n+1 个区间，注意，<strong>每个 key 值紧跟着 data 域，这说明B-树的 key 和 data 是聚合在一起的</strong>。一般而言，根节点都在内存中，B-树以每个节点为一次磁盘 IO，比如上图中，若搜索 key 为 25 节点的 data，首先在根节点进行二分查找（因为 keys 有序，二分最快），判断 key 25 小于 key 50，所以定位到最左侧的节点，<strong>此时进行一次磁盘 IO</strong>，将该节点从磁盘读入内存，接着继续进行上述过程，直到找到该 key 为止。</p>
+
+<p>查找伪代码</p>
+
+<pre class="prettyprint"><code class="language-c++ hljs lasso has-numbering hljs "><span class="hljs-built_in"><span class="hljs-built_in">Data</span></span><span class="hljs-subst"><span class="hljs-subst">*</span></span> BTreeSearch(Root <span class="hljs-subst"><span class="hljs-subst">*</span></span>node, Key key)
+{
+    <span class="hljs-built_in"><span class="hljs-built_in">Data</span></span><span class="hljs-subst"><span class="hljs-subst">*</span></span> <span class="hljs-built_in"><span class="hljs-built_in">data</span></span>;
+
+    <span class="hljs-keyword"><span class="hljs-keyword">if</span></span>(root <span class="hljs-subst"><span class="hljs-subst">==</span></span> <span class="hljs-built_in"><span class="hljs-built_in">NULL</span></span>)
+        <span class="hljs-keyword"><span class="hljs-keyword">return</span></span> <span class="hljs-built_in"><span class="hljs-built_in">NULL</span></span>;
+    <span class="hljs-built_in"><span class="hljs-built_in">data</span></span> <span class="hljs-subst"><span class="hljs-subst">=</span></span> BinarySearch(nod
